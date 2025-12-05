@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	scepclient "github.com/micromdm/scep/v2/client"
+	scepclient "github.com/hegde-akshath/micromdm-scep-badcert/client"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"

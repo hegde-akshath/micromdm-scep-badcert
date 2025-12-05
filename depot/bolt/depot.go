@@ -10,7 +10,7 @@ import (
 	"math/big"
 	"sync"
 
-	"github.com/micromdm/scep/v2/depot"
+	"github.com/hegde-akshath/micromdm-scep-badcert/depot"
 
 	"github.com/boltdb/bolt"
 )

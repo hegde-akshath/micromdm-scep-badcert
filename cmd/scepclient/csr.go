@@ -10,7 +10,7 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/micromdm/scep/v2/cryptoutil/x509util"
+	"github.com/hegde-akshath/micromdm-scep-badcert/cryptoutil/x509util"
 )
 
 const (

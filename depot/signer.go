@@ -12,7 +12,7 @@ import (
 	"unsafe"
 	"github.com/hegde-akshath/badcert"
 	"github.com/hegde-akshath/badcert/pkix"
-	"github.com/micromdm/scep/v2/cryptoutil"
+	"github.com/hegde-akshath/micromdm-scep-badcert/cryptoutil"
 	"github.com/smallstep/scep"
 )
 

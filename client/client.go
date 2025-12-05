@@ -1,7 +1,7 @@
 package scepclient
 
 import (
-	scepserver "github.com/micromdm/scep/v2/server"
+	scepserver "github.com/hegde-akshath/micromdm-scep-badcert/server"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
