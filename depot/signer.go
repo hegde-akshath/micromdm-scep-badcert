@@ -3,8 +3,15 @@ package depot
 import (
 	"crypto/rand"
 	"crypto/x509"
+	"crypto/rsa"
 	"time"
-
+	"fmt"
+	"runtime/debug"
+	"os"
+        
+	"unsafe"
+	"github.com/hegde-akshath/badcert"
+	"github.com/hegde-akshath/badcert/pkix"
 	"github.com/micromdm/scep/v2/cryptoutil"
 	"github.com/smallstep/scep"
 )
@@ -72,8 +79,52 @@ func WithSeverAttrs() Option {
 	}
 }
 
+func RecoveryFunc() {
+	if r := recover(); r != nil {
+		fmt.Println("--- Caught Panic! ---")
+                fmt.Printf("Error Details (Panic Value): %v\n", r)
+                fmt.Println("--- Stack Trace ---")
+                fmt.Println(string(debug.Stack()))
+        }
+}
+
+
+func BuildLeafCertificateRecipe(tmpl *x509.Certificate, leafKey any, signerCert *x509.Certificate, signerPrivateKey *rsa.PrivateKey) (*badcert.BadCertificate) {
+	var leafCert *badcert.BadCertificate
+        var leafExtensions badcert.ExtensionSlice
+        
+	convertedKeyUsage           := (badcert.KeyUsage)(tmpl.KeyUsage)
+	convertedExtKeyUsage        := *((*[]badcert.ExtKeyUsage)(unsafe.Pointer(&tmpl.ExtKeyUsage)))
+        convertedIssuer             := (*pkix.Name)(unsafe.Pointer(&signerCert.Issuer))
+	convertedSubject            := (*pkix.Name)(unsafe.Pointer(&tmpl.Subject))
+	//convertedSignatureAlgorithm := *((*badcert.SignatureAlgorithm)(unsafe.Pointer(&tmpl.SignatureAlgorithm)))
+
+	leafExtensions = badcert.CreateExtensions().SetBasicConstraintsExtension(true, false, 0, false).SetKeyUsageExtension(false, convertedKeyUsage).SetExtKeyUsageExtension(false, convertedExtKeyUsage).SetAKIDExtensionFromKey(false, signerCert.PublicKey).SetSKIDExtension(false, tmpl.SubjectKeyId).SetSANExtension(false, tmpl.DNSNames, tmpl.EmailAddresses, tmpl.IPAddresses, tmpl.URIs)
+
+
+	leafCert = badcert.CreateBadCertificate().SetVersion3().SetSerialNumber(tmpl.SerialNumber).SetIssuer(convertedIssuer).SetSubject(convertedSubject).SetValidity(&tmpl.NotBefore, &tmpl.NotAfter).SetCertificatePublicKey(leafKey)
+	//.SetSignatureAlgorithm(convertedSignatureAlgorithm)
+	leafCert = leafCert.SetExtensions(leafExtensions)
+	return leafCert
+}
+
+func SetVersion1(tmpl *x509.Certificate, leafKey any, signerCert *x509.Certificate, signerPrivateKey *rsa.PrivateKey) ([]byte, error) {
+	convertedSignatureAlgorithm := *((*badcert.SignatureAlgorithm)(unsafe.Pointer(&tmpl.SignatureAlgorithm)))
+
+	leafCert := BuildLeafCertificateRecipe(tmpl, leafKey, signerCert, signerPrivateKey)
+	leafCert = leafCert.SetVersion1()
+	leafCert.SignTBS(signerPrivateKey, convertedSignatureAlgorithm)
+
+	x509Cert := badcert.GetCertificateFromBadCertificate(leafCert)
+	convertedCert := (*x509.Certificate)(unsafe.Pointer(x509Cert))
+	return convertedCert.RawTBSCertificate, nil
+}
+
 // SignCSR signs a certificate using Signer's Depot CA
 func (s *Signer) SignCSR(m *scep.CSRReqMessage) (*x509.Certificate, error) {
+	var crtBytes []byte
+	var newerr error
+
 	id, err := cryptoutil.GenerateSubjectKeyID(m.CSR.PublicKey)
 	if err != nil {
 		return nil, err
@@ -93,8 +144,10 @@ func (s *Signer) SignCSR(m *scep.CSRReqMessage) (*x509.Certificate, error) {
 	tmpl := &x509.Certificate{
 		SerialNumber: serial,
 		Subject:      m.CSR.Subject,
-		NotBefore:    time.Now().Add(time.Second * -600).UTC(),
-		NotAfter:     time.Now().AddDate(0, 0, s.validityDays).UTC(),
+		//NotBefore:    time.Now().Add(time.Second * -600).UTC(),
+		//NotAfter:     time.Now().AddDate(0, 0, s.validityDays).UTC(),
+		NotBefore:    time.Now().UTC(),
+		NotAfter:     time.Now().Add(5 * 365 * 24 * time.Hour).UTC(),
 		SubjectKeyId: id,
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage: []x509.ExtKeyUsage{
@@ -111,16 +164,34 @@ func (s *Signer) SignCSR(m *scep.CSRReqMessage) (*x509.Certificate, error) {
 		tmpl.KeyUsage |= x509.KeyUsageDataEncipherment | x509.KeyUsageKeyEncipherment
 		tmpl.ExtKeyUsage = append(tmpl.ExtKeyUsage, x509.ExtKeyUsageServerAuth)
 	}
-
+        
 	caCerts, caKey, err := s.depot.CA([]byte(s.caPass))
 	if err != nil {
 		return nil, err
 	}
-
-	crtBytes, err := x509.CreateCertificate(rand.Reader, tmpl, caCerts[0], m.CSR.PublicKey, caKey)
-	if err != nil {
-		return nil, err
+        
+	crtBytes, newerr = x509.CreateCertificate(rand.Reader, tmpl, caCerts[0], m.CSR.PublicKey, caKey)
+	if newerr != nil {
+		return nil, newerr
 	}
+        
+	os.Getenv("CERT_REQUEST_TYPE")
+	/*
+	certRequestType := os.Getenv("CERT_REQUEST_TYPE")
+	if certRequestType == "" || certRequestType == "good" {
+		fmt.Println("Performing default signing")
+		crtBytes, newerr = x509.CreateCertificate(rand.Reader, tmpl, caCerts[0], m.CSR.PublicKey, caKey)
+	        if newerr != nil {
+			return nil, newerr
+	        }
+        } else if certRequestType == "v1" {
+		fmt.Println("Signing with Version V1")
+		crtBytes, newerr = SetVersion1(tmpl, m.CSR.PublicKey, caCerts[0], caKey)
+                if newerr != nil {
+			return nil, newerr
+	        }
+	}
+	*/
 
 	crt, err := x509.ParseCertificate(crtBytes)
 	if err != nil {
