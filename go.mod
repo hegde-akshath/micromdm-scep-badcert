@@ -1,4 +1,4 @@
-module github.com/micromdm/scep/v2
+module github.com/hegde-akshath/micromdm-scep-badcert
 
 go 1.25.1
 
